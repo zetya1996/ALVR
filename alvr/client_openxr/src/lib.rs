@@ -210,6 +210,9 @@ pub fn entry_point() {
     exts.ext_local_floor = available_extensions.ext_local_floor;
     exts.ext_performance_settings = available_extensions.ext_performance_settings;
     exts.ext_user_presence = available_extensions.ext_user_presence;
+    exts.fb_spatial_entity = true;
+    exts.ext_spatial_marker_tracking = true;
+    exts.ext_future = true;
     exts.fb_body_tracking = available_extensions.fb_body_tracking;
     exts.fb_color_space = available_extensions.fb_color_space;
     exts.fb_composition_layer_settings = available_extensions.fb_composition_layer_settings;
@@ -459,10 +462,7 @@ pub fn entry_point() {
 
                         core_context.send_proximity_state(event.is_user_present());
                     }
-                    xr::Event::Unknown => {
-                        // use event_storage.as_raw(), reinterpret as sys::BaseInStructure, get type
-                        // and then reinterpret as the event struct
-                    }
+                   
                     _ => (),
                 }
             }
