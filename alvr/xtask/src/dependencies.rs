@@ -365,11 +365,6 @@ fn get_android_openxr_loaders(selection: OpenXRLoadersSelection) {
         "yvr_openxr_mobile_sdk_2.0.0/OpenXR/Libs/Android/arm64-v8a",
     );
 
-    get_openxr_loader(
-        "_lynx",
-        "https://portal.lynx-r.com/downloads/download/16", // version 1.0.0
-        "jni/arm64-v8a",
-    );
 }
 
 pub fn build_android_deps(

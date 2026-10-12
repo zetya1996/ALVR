@@ -64,6 +64,7 @@ devices! {
     (GENERIC_TRACKER_1, "/user/generic_tracker/1"),
     (GENERIC_TRACKER_2, "/user/generic_tracker/2"),
     (GENERIC_TRACKER_3, "/user/generic_tracker/3"),
+    (QR_TRACKER, "/trackers/qr"),
 }
 
 pub enum ButtonType {

@@ -1,25 +1,22 @@
 use openxr::{
     self as xr, AsHandle, raw,
-    sys::{self, Handle},
+    sys::{self},
 };
 use std::{
-    collections::{HashMap, HashSet},
-    ffi::{CStr, c_char},
-    ptr,
-    time::{Duration, Instant},
+    collections::HashSet, ffi::{CStr, c_char}, ptr, thread, time::{Duration, Instant},
 };
 
 const QR_CODE_CAPABILITY: sys::SpatialCapabilityEXT =
     sys::SpatialCapabilityEXT::MARKER_TRACKING_QR_CODE;
 // Note: The Meta implementation is currently bugged and the buffer capacity cannot be changed once
 // the fist call of query_spatial_component_data is made.
-const MAX_MARKERS_COUNT: usize = 32;
+const MAX_MARKERS_COUNT: usize = 2;
 const DISCOVERY_TIMEOUT: Duration = Duration::from_secs(1);
+const POLL_TIMEOUT: Duration = Duration::from_millis(100);
 
 struct SpatialContextReadyData {
     handle: sys::SpatialContextEXT,
     discovery_snapshot_future: Option<sys::FutureEXT>,
-    spatial_entities: HashMap<sys::SpatialEntityIdEXT, (sys::SpatialEntityEXT, String)>,
     entity_ids: [sys::SpatialEntityIdEXT; MAX_MARKERS_COUNT],
     entity_states: [sys::SpatialEntityTrackingStateEXT; MAX_MARKERS_COUNT],
     bounded_2d_arr: [sys::SpatialBounded2DDataEXT; MAX_MARKERS_COUNT],
@@ -49,16 +46,15 @@ pub struct QRCodesSpatialContext {
     session: xr::Session<xr::AnyGraphics>,
     spatial_entity_fns: raw::SpatialEntityEXT,
     enabled_components: Vec<sys::SpatialComponentTypeEXT>,
-    codes_to_track: HashSet<String>,
     context_state: SpatialContextState,
     discovery_timeout_deadline: Instant,
+    poll_timeout_deadline: Instant,
 }
 
 impl QRCodesSpatialContext {
     // If ids_to_track is empty, track all markers. This is used for the lobby
     pub fn new(
         session: &xr::Session<xr::OpenGlEs>,
-        strings_to_track: HashSet<String>,
     ) -> xr::Result<Self> {
         let spatial_entity_fns = session
             .instance()
@@ -108,9 +104,9 @@ impl QRCodesSpatialContext {
             session: session.clone().into_any_graphics(),
             spatial_entity_fns,
             enabled_components,
-            codes_to_track: strings_to_track,
             context_state: SpatialContextState::Creating(create_context_future),
             discovery_timeout_deadline: Instant::now(),
+            poll_timeout_deadline: Instant::now(),
         })
     }
 
@@ -121,6 +117,10 @@ impl QRCodesSpatialContext {
     ) -> xr::Result<Option<Vec<(String, xr::Posef)>>> {
         let now = Instant::now();
 
+        if now < self.poll_timeout_deadline {
+           return Ok(None);
+        }
+        self.poll_timeout_deadline = now + POLL_TIMEOUT;
         let spatial_context_data = match &mut self.context_state {
             SpatialContextState::Ready(data) => data,
 
@@ -147,7 +147,6 @@ impl QRCodesSpatialContext {
                     SpatialContextState::Ready(Box::new(SpatialContextReadyData {
                         handle: completion.spatial_context,
                         discovery_snapshot_future: None,
-                        spatial_entities: HashMap::new(),
                         entity_ids: [sys::SpatialEntityIdEXT::from_raw(0); MAX_MARKERS_COUNT],
                         entity_states: [sys::SpatialEntityTrackingStateEXT::STOPPED;
                             MAX_MARKERS_COUNT],
@@ -169,6 +168,7 @@ impl QRCodesSpatialContext {
                 // Custom enums don't have the method insert(), so we cannot get back a mutable
                 // reference directly.
                 return Ok(None);
+                
             }
         };
 
@@ -176,7 +176,6 @@ impl QRCodesSpatialContext {
         let snapshot_handle = if let &Some(future) = &spatial_context_data.discovery_snapshot_future
         {
             if super::check_future(self.session.instance(), future)? {
-                spatial_context_data.discovery_snapshot_future = None;
 
                 let completion_info = sys::CreateSpatialDiscoverySnapshotCompletionInfoEXT {
                     ty: sys::CreateSpatialDiscoverySnapshotCompletionInfoEXT::TYPE,
@@ -199,9 +198,10 @@ impl QRCodesSpatialContext {
                     completion.assume_init()
                 };
                 if completion.future_result != sys::Result::SUCCESS {
+                    self.discovery_timeout_deadline = now + DISCOVERY_TIMEOUT;
                     return Err(completion.future_result);
                 }
-
+                spatial_context_data.discovery_snapshot_future = None;
                 Some(completion.snapshot)
             } else {
                 None
@@ -234,49 +234,29 @@ impl QRCodesSpatialContext {
             None
         };
 
-        // Get snapshot for already discovered entities if no discovery happened
-        // Note: We are not generating a snapshot for the already discovered entities if we got a
-        // discovery snapshot.
-        let snapshot_handle = if let Some(handle) = snapshot_handle {
-            handle
-        } else {
-            let entities = spatial_context_data
-                .spatial_entities
-                .values()
-                .map(|(entity, _)| *entity)
-                .collect::<Vec<sys::SpatialEntityEXT>>();
-            let create_info = sys::SpatialUpdateSnapshotCreateInfoEXT {
-                ty: sys::SpatialUpdateSnapshotCreateInfoEXT::TYPE,
-                next: ptr::null(),
-                entity_count: entities.len() as u32,
-                entities: entities.as_ptr(),
-                component_type_count: 0,
-                component_types: ptr::null(),
-                base_space: base_space.as_handle(),
-                time,
-            };
 
-            let mut snapshot_handle = sys::SpatialSnapshotEXT::NULL;
-            unsafe {
-                (self.spatial_entity_fns.create_spatial_update_snapshot)(
-                    spatial_context_data.handle,
-                    &create_info,
-                    &mut snapshot_handle,
-                );
+        let snapshot_handle = match snapshot_handle {
+            Some(handle) => handle,
+
+            None => {
+                return Ok(None);
             }
-
-            snapshot_handle
         };
-
         // Make sure to always destroy the snapshot even when bailing out with "?"
         let _wrapper = SnapshotDropWrapper {
             handle: snapshot_handle,
             ext_fns: self.spatial_entity_fns,
         };
 
+        let tracking_filter = sys::SpatialFilterTrackingStateEXT {
+            ty: sys::SpatialFilterTrackingStateEXT::TYPE,
+            next: ptr::null(),
+            tracking_state: sys::SpatialEntityTrackingStateEXT::TRACKING,
+        };
         let query_contition = sys::SpatialComponentDataQueryConditionEXT {
             ty: sys::SpatialComponentDataQueryConditionEXT::TYPE,
-            next: ptr::null(),
+
+            next: &tracking_filter as *const _ as *const std::ffi::c_void,
             component_type_count: self.enabled_components.len() as u32,
             component_types: self.enabled_components.as_ptr(),
         };
@@ -329,31 +309,13 @@ impl QRCodesSpatialContext {
         }
 
         let mut out_markers = Vec::with_capacity(marker_count as usize);
+        let mut tracked_this_frame = HashSet::with_capacity(marker_count as usize);
+    
         for idx in 0..marker_count as usize {
             let entity_id = spatial_context_data.entity_ids[idx];
             let marker = spatial_context_data.marker_arr[idx];
 
-            if spatial_context_data.entity_states[idx]
-                != sys::SpatialEntityTrackingStateEXT::TRACKING
-                || marker.capability != QR_CODE_CAPABILITY
-                || marker.data.buffer_id == sys::SpatialBufferIdEXT::from_raw(0)
-                || marker.data.buffer_type != sys::SpatialBufferTypeEXT::STRING
-            {
-                alvr_common::debug!(
-                    "Parsing marker failed! {:?} {:?} {:?} {:?}",
-                    spatial_context_data.entity_states[idx],
-                    marker.capability,
-                    marker.data.buffer_id,
-                    marker.data.buffer_type,
-                );
-                continue;
-            }
-
-            let string = if let Some((_, string)) =
-                spatial_context_data.spatial_entities.get(&entity_id)
-            {
-                string.clone()
-            } else {
+            tracked_this_frame.insert(entity_id);
                 let get_info = sys::SpatialBufferGetInfoEXT {
                     ty: sys::SpatialBufferGetInfoEXT::TYPE,
                     next: ptr::null(),
@@ -376,41 +338,19 @@ impl QRCodesSpatialContext {
                     .map_err(|_| sys::Result::ERROR_SPATIAL_BUFFER_ID_INVALID_EXT)?
                     .to_owned();
 
-                if self.codes_to_track.is_empty() || self.codes_to_track.contains(&string) {
-                    let create_info = sys::SpatialEntityFromIdCreateInfoEXT {
-                        ty: sys::SpatialEntityFromIdCreateInfoEXT::TYPE,
-                        next: ptr::null(),
-                        entity_id,
-                    };
-
-                    let mut spatial_entity = sys::SpatialEntityEXT::NULL;
-                    unsafe {
-                        super::xr_res((self.spatial_entity_fns.create_spatial_entity_from_id)(
-                            spatial_context_data.handle,
-                            &create_info,
-                            &mut spatial_entity,
-                        ))?;
-                    };
-
-                    spatial_context_data
-                        .spatial_entities
-                        .insert(entity_id, (spatial_entity, string.clone()));
-                }
-
-                string
-            };
-
             let pose = spatial_context_data.bounded_2d_arr[idx].center;
             out_markers.push((string, pose));
         }
-
+    
         Ok(Some(out_markers))
     }
 }
 
+
 impl Drop for QRCodesSpatialContext {
     fn drop(&mut self) {
         if let SpatialContextState::Ready(data) = &self.context_state {
+            
             unsafe {
                 super::xr_res((self.spatial_entity_fns.destroy_spatial_context)(
                     data.handle,

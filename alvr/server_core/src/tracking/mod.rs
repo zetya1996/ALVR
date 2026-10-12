@@ -15,7 +15,8 @@ use crate::{
 use alvr_common::{
     BODY_CHEST_ID, BODY_HIPS_ID, BODY_LEFT_ELBOW_ID, BODY_LEFT_FOOT_ID, BODY_LEFT_KNEE_ID,
     BODY_RIGHT_ELBOW_ID, BODY_RIGHT_FOOT_ID, BODY_RIGHT_KNEE_ID, ConnectionError,
-    DEVICE_ID_TO_PATH, DeviceMotion, HAND_LEFT_ID, HAND_RIGHT_ID, HEAD_ID, Pose, ViewParams,
+    DEVICE_ID_TO_PATH, DeviceMotion, HAND_LEFT_ID, HAND_RIGHT_ID, HEAD_ID, Pose, QR_TRACKER_ID,
+    ViewParams,
     glam::{Quat, Vec3},
     parking_lot::Mutex,
 };
@@ -57,6 +58,7 @@ pub struct TrackingManager {
     device_motions_history: HashMap<u64, VecDeque<(Duration, DeviceMotion)>>,
     hand_skeletons_history: [VecDeque<(Duration, [Pose; 26])>; 2],
     max_history_size: usize,
+    markers: HashMap<String, Pose>,
 }
 
 impl TrackingManager {
@@ -67,6 +69,7 @@ impl TrackingManager {
             device_motions_history: HashMap::new(),
             hand_skeletons_history: [VecDeque::new(), VecDeque::new()],
             max_history_size,
+            markers: HashMap::new(),
         }
     }
 
@@ -112,7 +115,9 @@ impl TrackingManager {
     pub fn recenter_pose(&self, pose: Pose) -> Pose {
         self.inverse_recentering_origin * pose
     }
-
+    pub fn report_markers(&mut self, markers: &[(String, Pose)]) {
+        self.markers = markers.iter().cloned().collect();
+    }
     pub fn recenter_motion(&self, motion: DeviceMotion) -> DeviceMotion {
         self.inverse_recentering_origin * motion
     }
@@ -135,6 +140,7 @@ impl TrackingManager {
             (*BODY_LEFT_FOOT_ID, MotionConfig::default()),
             (*BODY_RIGHT_KNEE_ID, MotionConfig::default()),
             (*BODY_RIGHT_FOOT_ID, MotionConfig::default()),
+            (*QR_TRACKER_ID, MotionConfig::default()),
         ]);
 
         if let Switch::Enabled(controllers) = &headset_config.controllers {
@@ -372,7 +378,9 @@ pub fn tracking_loop(
                 timestamp,
                 &tracking.device_motions,
             );
-
+            if !tracking.markers.is_empty() {
+                tracking_manager_lock.report_markers(&tracking.markers);
+            }
             if let Some(skeleton) = tracking.hand_skeletons[0] {
                 tracking_manager_lock.report_hand_skeleton(HandType::Left, timestamp, skeleton);
             }
@@ -453,6 +461,18 @@ pub fn tracking_loop(
                     .ok();
             }
         }
+
+        if let Some((id, pose)) = tracking.markers.iter().next() {
+            let tracking_manager_lock = ctx.tracking_manager.read();
+            let p = tracking_manager_lock.recenter_pose(*pose);
+            ctx.events_sender.send(ServerCoreEvent::QRMessageFound {
+                    poll_timestamp: tracking.poll_timestamp,
+                    qr_string:  id.clone(),
+                    pose: p }).ok();              
+        }
+        
+           
+        
 
         ctx.events_sender
             .send(ServerCoreEvent::Tracking {

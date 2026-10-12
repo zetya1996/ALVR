@@ -246,7 +246,7 @@ pub extern "C" fn alvr_start_connection() {
         context.start_connection();
     }
 }
-
+/*
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn alvr_poll_event(out_event: *mut AlvrEvent, timeout_ns: u64) -> bool {
     if let Some(receiver) = &*EVENTS_RECEIVER.lock()
@@ -297,6 +297,7 @@ pub unsafe extern "C" fn alvr_poll_event(out_event: *mut AlvrEvent, timeout_ns: 
             ServerCoreEvent::ProximityState(headset_is_worn) => unsafe {
                 *out_event = AlvrEvent::ProximityState(headset_is_worn);
             },
+
         }
 
         true
@@ -304,7 +305,7 @@ pub unsafe extern "C" fn alvr_poll_event(out_event: *mut AlvrEvent, timeout_ns: 
         false
     }
 }
-
+*/
 /// Returns false if there is no tracking sample for the requested sample timestamp
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn alvr_get_device_motion(

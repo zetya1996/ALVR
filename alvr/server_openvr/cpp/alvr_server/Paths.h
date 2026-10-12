@@ -21,6 +21,8 @@ extern uint64_t BODY_LEFT_FOOT_ID;
 extern uint64_t BODY_RIGHT_KNEE_ID;
 extern uint64_t BODY_RIGHT_FOOT_ID;
 
+extern uint64_t QR_TRACKER_ID;
+
 // These values are needed to determine the hand skeleton when holding a controller.
 // todo: move inferred hand skeleton to rust
 extern uint64_t LEFT_A_TOUCH_ID;

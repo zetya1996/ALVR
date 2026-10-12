@@ -31,7 +31,7 @@ bool FakeViveTracker::activate() {
         this->prop_container, vr::Prop_SerialNumber_String, this->get_serial_number().c_str()
     ); // Changed
     vr_properties->SetStringProperty(
-        this->prop_container, vr::Prop_RenderModelName_String, "{htc}vr_tracker_vive_1_0"
+        this->prop_container, vr::Prop_RenderModelName_String, /*"{htc}vr_tracker_vive_1_0"*/ "generic_none"
     );
     vr_properties->SetBoolProperty(this->prop_container, vr::Prop_WillDriftInYaw_Bool, false);
     vr_properties->SetStringProperty(this->prop_container, vr::Prop_ManufacturerName_String, "HTC");
@@ -128,9 +128,12 @@ bool FakeViveTracker::activate() {
         name = "ALVR/tracker/left_elbow";
     } else if (this->device_id == BODY_RIGHT_ELBOW_ID) {
         name = "ALVR/tracker/right_elbow";
+    } else if (this->device_id == QR_TRACKER_ID) {
+        name = "ALVR/tracker/qr";      
     } else {
         name = "ALVR/tracker/unknown";
     }
+    
     vr_properties->SetStringProperty(
         this->prop_container, vr::Prop_RegisteredDeviceType_String, name
     );
@@ -207,7 +210,6 @@ void FakeViveTracker::OnPoseUpdated(uint64_t targetTimestampNs, const FfiDeviceM
     if (this->object_id == vr::k_unTrackedDeviceIndexInvalid) {
         return;
     }
-
     bool tracked = motion != nullptr;
 
     auto pose = vr::DriverPose_t {};
@@ -218,7 +220,7 @@ void FakeViveTracker::OnPoseUpdated(uint64_t targetTimestampNs, const FfiDeviceM
     pose.qWorldFromDriverRotation = HmdQuaternion_Init(1, 0, 0, 0);
     pose.qDriverFromHeadRotation = HmdQuaternion_Init(1, 0, 0, 0);
 
-    if (motion != nullptr) {
+    if (tracked) {
         pose.qRotation = HmdQuaternion_Init(
             motion->pose.orientation.w,
             motion->pose.orientation.x,
@@ -229,7 +231,23 @@ void FakeViveTracker::OnPoseUpdated(uint64_t targetTimestampNs, const FfiDeviceM
         pose.vecPosition[0] = motion->pose.position[0];
         pose.vecPosition[1] = motion->pose.position[1];
         pose.vecPosition[2] = motion->pose.position[2];
-    }
-
+         lastPoseUpdateTime = targetTimestampNs;
+    }       
+    
     this->submit_pose(pose);
+}
+void FakeViveTracker::CheckPastPoseUpdateTime(uint64_t targetTimestampNs) {
+    constexpr uint64_t kTimeoutNs = 1'000'000'000ULL; // 1 second in nanoseconds
+
+    if ((targetTimestampNs - lastPoseUpdateTime) > kTimeoutNs) {
+        OnPoseUpdated(targetTimestampNs, nullptr);
+    }
+}
+void FakeViveTracker::SetQRValue(const std::string& value) {
+     auto vr_properties = vr::VRProperties();
+     vr_properties->SetStringProperty(
+        this->prop_container,
+        Prop_Custom_QRCode_String,
+        value.c_str()
+    );
 }

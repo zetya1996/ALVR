@@ -168,6 +168,7 @@ extern "C" void ShutdownOpenvrClient();
 extern "C" void SetChaperoneArea(float areaWidth, float areaHeight);
 
 extern "C" void CaptureFrame();
+void SetQRMessage( unsigned long long targetTimestampNs,const char* str, size_t len,const FfiDeviceMotion* motion);
 
 // NalParsing.cpp
 void ParseFrameNals(

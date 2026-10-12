@@ -1,9 +1,8 @@
 use crate::{
     Platform,
     extra_extensions::{
-        self, BODY_JOINT_SET_FULL_BODY_META, BodyJointSetBD, BodyTrackerBD, BodyTrackerFB,
-        EyeTrackerSocial, FULL_BODY_JOINT_COUNT_META, FaceTracker2FB, FaceTrackerPico,
-        FacialTrackerHTC, MotionTrackerBD, MultimodalMeta, QRCodesSpatialContext
+        self, BodyTrackerBD, BodyTrackerFB, EyeTrackerSocial, FaceTracker2FB, FaceTrackerBD,
+        FacialTrackerHTC, MotionTrackerBD, MultimodalMeta,QRCodesSpatialContext,
     },
 };
 use alvr_common::{
@@ -118,7 +117,7 @@ pub struct HandInteraction {
 
 pub enum FaceExpressionsTracker {
     Fb(FaceTracker2FB),
-    Pico(FaceTrackerPico),
+    Bd(FaceTrackerBD),
     Htc {
         eye: Option<FacialTrackerHTC>,
         lip: Option<FacialTrackerHTC>,
@@ -311,7 +310,7 @@ impl InteractionContext {
 
         let multimodal_handle = check_ext_object(
             "MultimodalMeta",
-            MultimodalMeta::new(xr_session.clone(), &extra_extensions, xr_system),
+            MultimodalMeta::new(xr_session.clone(), xr_system),
         );
 
         let mut left_detached_grip_action = None;
@@ -508,12 +507,6 @@ impl InteractionContext {
             handle.pause().ok();
         }
 
-        if let Some(FaceExpressionsTracker::Pico(tracker)) =
-            &self.face_sources.face_expressions_tracker
-        {
-            tracker.stop_face_tracking().ok();
-        }
-
         self.multimodal_hands_enabled = false;
         self.face_sources.eyes_social = None;
 
@@ -527,7 +520,7 @@ impl InteractionContext {
 
         self.body_source = None;
         self.marker_spatial_context = None;
-
+        
         if let Some(config) = &config.face_tracking {
             if matches!(self.platform, Platform::QuestPro)
                 && matches!(config, FaceTrackingSourcesConfig::PreferFullFaceTracking)
@@ -553,7 +546,7 @@ impl InteractionContext {
             }
         }
 
-        if self.platform.is_quest() {
+         if self.platform.is_quest() {
                 #[cfg(target_os = "android")]
                 {
                     alvr_system_info::try_get_permission("com.oculus.permission.USE_ANCHOR_API");
@@ -566,8 +559,8 @@ impl InteractionContext {
                     alvr_system_info::try_get_permission(
                         "android.permission.SCENE_UNDERSTANDING_COARSE",
                     );
+                }
             }
-        }
 
         if config.body_tracking.is_some()
             && self.platform.is_quest()
@@ -600,20 +593,17 @@ impl InteractionContext {
                     self.face_sources.face_expressions_tracker =
                         Some(FaceExpressionsTracker::Fb(tracker))
                 } else if let Some(tracker) = check_ext_object(
-                    "FaceTrackerPico",
-                    FaceTrackerPico::new(self.xr_session.clone()),
+                    "FaceTrackerBD",
+                    FaceTrackerBD::new(self.xr_session.clone(), self.xr_system),
                 ) {
-                    tracker.start_face_tracking().ok();
-
                     self.face_sources.face_expressions_tracker =
-                        Some(FaceExpressionsTracker::Pico(tracker));
+                        Some(FaceExpressionsTracker::Bd(tracker));
                 }
                 // For vive, face trackers are always created at startup regardless of settings, and
                 // also cannot be destroyed early.
             }
         }
 
-      
         if let Some(config) = &config.body_tracking {
             if config.meta.prefer_full_body {
                 self.body_source = check_ext_object(
@@ -621,13 +611,13 @@ impl InteractionContext {
                     BodyTrackerFB::new(
                         &self.xr_session,
                         self.xr_system,
-                        *BODY_JOINT_SET_FULL_BODY_META,
+                        xr::BodyJointSetFB::FULL_BODY_M,
                         config.meta.prefer_high_fidelity,
                     ),
                 )
                 .map(|tracker| BodyTracker::Fb {
                     tracker,
-                    joint_count: FULL_BODY_JOINT_COUNT_META,
+                    joint_count: xr::FullBodyJointMETA::COUNT.into_raw() as usize,
                 });
             }
             if self.body_source.is_none() {
@@ -656,8 +646,7 @@ impl InteractionContext {
                                 "BodyTrackerBD (high accuracy)",
                                 BodyTrackerBD::new(
                                     self.xr_session.clone(),
-                                    BodyJointSetBD::FULL_BODY_JOINTS,
-                                    &self.extra_extensions,
+                                    xr::BodyJointSetBD::FULL_BODY_JOINTS,
                                     self.xr_system,
                                     prompt_calibration_on_start,
                                 ),
@@ -669,8 +658,7 @@ impl InteractionContext {
                                 "BodyTrackerBD (low accuracy)",
                                 BodyTrackerBD::new(
                                     self.xr_session.clone(),
-                                    BodyJointSetBD::BODY_WITHOUT_ARM,
-                                    &self.extra_extensions,
+                                    xr::BodyJointSetBD::BODY_WITHOUT_ARM,
                                     self.xr_system,
                                     prompt_calibration_on_start,
                                 ),
@@ -687,9 +675,12 @@ impl InteractionContext {
                     }
                 }
             }
+
         }
 
-        self.marker_spatial_context = check_ext_object("QRCodesSpatialContext",QRCodesSpatialContext::new(&self.xr_session, HashSet::new()));
+        
+           self.marker_spatial_context = check_ext_object("QRCodesSpatialContext",QRCodesSpatialContext::new(&self.xr_session),
+            )
     }
 }
 
@@ -1035,12 +1026,12 @@ pub fn get_face_data(
                 .get_face_expression_weights(xr_time)
                 .ok()
                 .flatten()
-                .map(|weights| FaceExpressions::Fb(weights.into_iter().collect())),
-            FaceExpressionsTracker::Pico(face_tracker_pico) => face_tracker_pico
-                .get_face_tracking_data(xr_time)
+                .map(FaceExpressions::Fb),
+            FaceExpressionsTracker::Bd(face_tracker_bd) => face_tracker_bd
+                .get_facial_simulation_data(xr_time)
                 .ok()
                 .flatten()
-                .map(|weights| FaceExpressions::Pico(weights.into_iter().collect())),
+                .map(FaceExpressions::Bd),
             FaceExpressionsTracker::Htc { eye, lip } => {
                 let eye = eye
                     .as_ref()
@@ -1159,13 +1150,13 @@ pub fn get_bd_motion_trackers(source: &BodyTracker, time: Duration) -> Vec<(u64,
     Vec::new()
 }
 
+
 pub fn get_marker_poses(
     context: &mut QRCodesSpatialContext,
     reference_space: &xr::Space,
     time: Duration,
 ) -> Option<Vec<(String, Pose)>> {
     let xr_time = crate::to_xr_time(time);
-
     context
         .poll(reference_space, xr_time)
         .ok()

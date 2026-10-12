@@ -14,6 +14,7 @@ uint64_t BODY_LEFT_KNEE_ID;
 uint64_t BODY_LEFT_FOOT_ID;
 uint64_t BODY_RIGHT_KNEE_ID;
 uint64_t BODY_RIGHT_FOOT_ID;
+uint64_t QR_TRACKER_ID;
 
 uint64_t LEFT_A_TOUCH_ID;
 uint64_t LEFT_B_TOUCH_ID;
@@ -72,6 +73,7 @@ void init_paths() {
     RIGHT_TRIGGER_TOUCH_ID = PathStringToHash("/user/hand/right/input/trigger/touch");
     RIGHT_TRIGGER_VALUE_ID = PathStringToHash("/user/hand/right/input/trigger/value");
     RIGHT_SQUEEZE_VALUE_ID = PathStringToHash("/user/hand/right/input/squeeze/value");
+    QR_TRACKER_ID = PathStringToHash("/trackers/qr");
 
     BODY_IDS.insert(BODY_CHEST_ID);
     BODY_IDS.insert(BODY_HIPS_ID);

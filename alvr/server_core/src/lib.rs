@@ -90,6 +90,11 @@ pub enum ServerCoreEvent {
     ShutdownPending,
     RestartPending,
     ProximityState(bool),
+    QRMessageFound {
+        poll_timestamp: Duration,
+        qr_string: String,
+        pose: Pose
+    },
 }
 
 pub struct ConnectionContext {

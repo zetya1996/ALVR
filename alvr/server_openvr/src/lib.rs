@@ -15,11 +15,7 @@ mod bindings {
 use bindings::*;
 
 use alvr_common::{
-    BUTTON_INFO, HAND_LEFT_ID, HAND_RIGHT_ID, HAND_TRACKER_LEFT_ID, HAND_TRACKER_RIGHT_ID, HEAD_ID,
-    Pose, ViewParams, error,
-    parking_lot::{Mutex, RwLock},
-    settings_schema::Switch,
-    warn,
+    BUTTON_INFO, DeviceMotion, HAND_LEFT_ID, HAND_RIGHT_ID, HAND_TRACKER_LEFT_ID, HAND_TRACKER_RIGHT_ID, HEAD_ID, Pose, QR_TRACKER_ID, ViewParams, error, glam::{Vec3}, parking_lot::{Mutex, RwLock}, settings_schema::Switch, warn,
 };
 use alvr_filesystem as afs;
 use alvr_packets::{ButtonValue, Haptics};
@@ -299,6 +295,19 @@ fn event_loop(events_receiver: mpsc::Receiver<ServerCoreEvent>) {
                 }
                 ServerCoreEvent::ProximityState(headset_is_worn) => unsafe {
                     SetProximityState(headset_is_worn)
+                },
+                ServerCoreEvent::QRMessageFound { poll_timestamp,qr_string, pose } => unsafe {
+                    alvr_common::info!("Found QR {}",qr_string);
+                SetQRMessage(
+                    poll_timestamp.as_nanos() as _,
+                    qr_string.as_ptr() as *const std::ffi::c_char,
+                    qr_string.len(),
+                    &tracking::to_ffi_motion(*QR_TRACKER_ID, DeviceMotion {
+                        angular_velocity: Vec3::default(),
+                        linear_velocity: Vec3::default(),
+                        pose: pose
+                    })
+                );
                 },
             }
         }

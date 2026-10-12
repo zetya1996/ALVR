@@ -302,7 +302,11 @@ bool InitializeStreaming() {
                 }
             }
         }
-
+        auto qrTracker = std::make_unique<FakeViveTracker>(QR_TRACKER_ID);
+        if (qrTracker->register_device(true)) {
+            g_driver_provider.tracked_devices.insert({ QR_TRACKER_ID, qrTracker.get() });
+            g_driver_provider.generic_trackers.push_back(std::move(qrTracker));
+        }
         if (Settings::Instance().m_enableBodyTrackingFakeVive) {
             auto chestTracker = std::make_unique<FakeViveTracker>(BODY_CHEST_ID);
             if (chestTracker->register_device(true)) {
@@ -421,7 +425,6 @@ void SetTracking(
             targetTimestampNs, controllerPoseTimeOffsetS, rightHandData
         );
     }
-
     if (Settings::Instance().m_enableBodyTrackingFakeVive) {
         std::map<uint64_t, FfiDeviceMotion> motionsMap;
         for (int i = 0; i < bodyTrackerMotionCount; i++) {
@@ -440,8 +443,26 @@ void SetTracking(
             }
         }
     }
-}
 
+    for (const auto& tracker_ptr : g_driver_provider.generic_trackers) {
+        FakeViveTracker* tracker = tracker_ptr.get();
+        tracker->CheckPastPoseUpdateTime(targetTimestampNs);
+    }
+   
+
+}
+void SetQRMessage(unsigned long long targetTimestampNs,const char* str, size_t len, const FfiDeviceMotion* motion) {
+    if (!str || len == 0) return;
+
+    auto it = g_driver_provider.tracked_devices.find(QR_TRACKER_ID);
+        if (it != g_driver_provider.tracked_devices.end()) {
+                auto* maybeTracker = (FakeViveTracker*)it->second;
+                std::string message(str, len);
+                maybeTracker->SetQRValue(message);
+                maybeTracker->OnPoseUpdated(targetTimestampNs,motion);
+        }
+
+}
 void RequestDriverResync() {
     if (g_driver_provider.hmd) {
         vr::VRServerDriverHost()->VendorSpecificEvent(
