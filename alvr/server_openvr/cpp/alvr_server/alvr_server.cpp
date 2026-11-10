@@ -38,7 +38,7 @@ std::unique_ptr<vr::HmdMatrix34_t> GetRawZeroPose() {
 bool IsOpenvrClientReady();
 #endif
 void _SetChaperoneArea(float areaWidth, float areaHeight);
-
+void _ResetChaperoneZeroPose();
 vr::EVREventType VendorEvent_ALVRDriverResync
     = (vr::EVREventType)(vr::VREvent_VendorSpecific_Reserved_Start + ((vr::EVREventType)0xC0));
 
@@ -144,23 +144,13 @@ public:
 
                 HapticsSend(id, haptics.fDurationSeconds, haptics.fFrequency, haptics.fAmplitude);
             }
-#ifdef __linux__
-            else if (event.eventType == vr::VREvent_ChaperoneUniverseHasChanged
-                     || event.eventType == vr::VREvent_ChaperoneRoomSetupFinished
-                     || event.eventType == vr::VREvent_ChaperoneFlushCache
-                     || event.eventType == vr::VREvent_ChaperoneSettingsHaveChanged
-                     || event.eventType == vr::VREvent_SeatedZeroPoseReset
-                     || event.eventType == vr::VREvent_StandingZeroPoseReset
-                     || event.eventType == vr::VREvent_SceneApplicationChanged
-                     || event.eventType == VendorEvent_ALVRDriverResync) {
-                if (hmd && hmd->m_poseHistory) {
-                    auto rawZeroPose = GetRawZeroPose();
-                    if (rawZeroPose != nullptr) {
-                        hmd->m_poseHistory->SetTransform(*rawZeroPose);
-                    }
-                }
+
+            else if (event.eventType == vr::VREvent_SeatedZeroPoseReset || event.eventType == vr::VREvent_StandingZeroPoseReset){              
+                
+                RecenterRequest();
+                _ResetChaperoneZeroPose();
+
             }
-#endif
         }
         if (vr::VRServerDriverHost()->IsExiting() && !shutdown_called) {
             Debug("DriverProvider: Received shutdown event");
@@ -211,6 +201,7 @@ void (*DriverReadyIdle)(bool setDefaultChaprone);
 void (*SetVideoConfigNals)(const unsigned char* configBuffer, int len, int codec);
 void (*VideoSend)(unsigned long long targetTimestampNs, unsigned char* buf, int len, bool isIdr);
 void (*HapticsSend)(unsigned long long path, float duration_s, float frequency, float amplitude);
+void (*RecenterRequest)();
 void (*ShutdownRuntime)();
 unsigned long long (*PathStringToHash)(const char* path);
 void (*ReportPresent)(unsigned long long timestamp_ns, unsigned long long offset_ns);
@@ -543,7 +534,9 @@ void SetProximityState(bool headset_is_worn) {
 void SetChaperoneArea(float areaWidth, float areaHeight) {
     _SetChaperoneArea(areaWidth, areaHeight);
 }
-
+void ResetChaperoneZeroPose() {
+    _ResetChaperoneZeroPose();
+}
 void CaptureFrame() {
 #ifndef __APPLE__
     if (g_driver_provider.hmd && g_driver_provider.hmd->m_encoder) {

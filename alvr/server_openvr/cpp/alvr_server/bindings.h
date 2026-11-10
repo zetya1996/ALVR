@@ -127,6 +127,7 @@ extern "C" void (*VideoSend)(
 extern "C" void (*HapticsSend)(
     unsigned long long path, float duration_s, float frequency, float amplitude
 );
+extern "C" void(*RecenterRequest)();
 extern "C" void (*ShutdownRuntime)();
 extern "C" unsigned long long (*PathStringToHash)(const char* path);
 extern "C" void (*ReportPresent)(unsigned long long timestamp_ns, unsigned long long offset_ns);

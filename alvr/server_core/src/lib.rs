@@ -241,6 +241,16 @@ impl ServerCoreContext {
         )
     }
 
+
+    pub fn recenter(&self) {
+        let settings = crate::settings();
+        let config = &settings.headset;
+
+        self.connection_context
+            .tracking_manager
+            .write()
+            .recenter(config.position_recentering_mode, config.rotation_recentering_mode);
+    }
     pub fn start_connection(&self) {
         dbg_server_core!("start_connection");
 

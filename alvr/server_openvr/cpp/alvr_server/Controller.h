@@ -36,6 +36,11 @@ private:
     float m_triggerValue = 0;
     float m_gripValue = 0;
 
+
+    static constexpr uint64_t FROZEN_TIMEOUT_NS = 10'000'000; // 10 ms unchanged = lost
+    float m_lastSkelPos[3] = {};
+    float m_lastSkelRot[4] = {};
+    uint64_t m_lastSkelChangeNs = 0;
     vr::VRInputComponentHandle_t getHapticComponent();
     void GetBoneTransform(bool withController, vr::VRBoneTransform_t outBoneTransform[]);
 

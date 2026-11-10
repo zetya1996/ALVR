@@ -72,12 +72,22 @@ impl TrackingManager {
             markers: HashMap::new(),
         }
     }
-
+    pub fn get_inverse_recentering_origin(&self) -> Pose {
+        self.inverse_recentering_origin
+    }
+    pub fn set_inverse_recentering_origin(&mut self, inverse_origin: Pose){
+        self.inverse_recentering_origin = inverse_origin;
+    }
     pub fn recenter(
         &mut self,
         position_recentering_mode: PositionRecenteringMode,
         rotation_recentering_mode: RotationRecenteringMode,
     ) {
+       if self.last_head_pose.position == Vec3::ZERO
+    && self.last_head_pose.orientation == Quat::IDENTITY
+        {
+            return;
+        }
         let position = match position_recentering_mode {
             PositionRecenteringMode::Disabled => Vec3::ZERO,
             PositionRecenteringMode::LocalFloor => {
@@ -110,6 +120,8 @@ impl TrackingManager {
             orientation,
         }
         .inverse();
+
+    alvr_common::warn!("new recenter_origin: {}",position);
     }
 
     pub fn recenter_pose(&self, pose: Pose) -> Pose {

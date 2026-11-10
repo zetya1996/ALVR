@@ -316,6 +316,11 @@ fn event_loop(events_receiver: mpsc::Receiver<ServerCoreEvent>) {
     });
 }
 
+extern "C" fn recenter_request() {
+    if let Some(ctx) = &*SERVER_CORE_CONTEXT.write() {
+        ctx.recenter();
+    }
+}
 extern "C" fn driver_ready_idle(set_default_chap: bool) {
     thread::spawn(move || {
         unsafe { InitOpenvrClient() };
@@ -547,6 +552,7 @@ pub unsafe extern "C" fn HmdDriverFactory(
             RegisterButtons = Some(register_buttons);
             DriverReadyIdle = Some(driver_ready_idle);
             HapticsSend = Some(send_haptics);
+            RecenterRequest = Some(recenter_request);
             SetVideoConfigNals = Some(set_video_config_nals);
             VideoSend = Some(send_video);
             GetDynamicEncoderParams = Some(get_dynamic_encoder_params);

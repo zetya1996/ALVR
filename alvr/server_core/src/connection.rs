@@ -1038,8 +1038,16 @@ fn connection_pipeline(
         }
     };
 
+
+   
+    let inverse_recenter_origin_before = *&ctx.tracking_manager.read().get_inverse_recentering_origin();
+
+    alvr_common::warn!("recenterorigin before: {}",inverse_recenter_origin_before.orientation);
     *ctx.tracking_manager.write() =
         TrackingManager::new(initial_settings.connection.statistics_history_size);
+    (*ctx.tracking_manager.write()).set_inverse_recentering_origin(inverse_recenter_origin_before);
+    alvr_common::warn!("recenterorigin before2: {}",inverse_recenter_origin_before.orientation);
+
     let hand_gesture_manager = Arc::new(Mutex::new(HandGestureManager::new()));
 
     let tracking_receive_thread = thread::spawn({

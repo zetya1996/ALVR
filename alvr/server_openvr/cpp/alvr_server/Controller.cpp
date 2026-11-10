@@ -184,8 +184,51 @@ bool Controller::OnPoseUpdate(uint64_t targetTimestampNs, float predictionS, Ffi
         && (device_id == HAND_TRACKER_LEFT_ID || device_id == HAND_TRACKER_RIGHT_ID);
     bool enabledAsController
         = !handData.isHandTracker && (device_id == HAND_LEFT_ID || device_id == HAND_RIGHT_ID);
-    bool enabled = (controllerMotion != nullptr || handSkeleton != nullptr)
-        && (enabledAsHandTracker || enabledAsController);
+    bool roleMatches = enabledAsHandTracker || enabledAsController;
+
+    auto isZeroVec = [](const float* v) {
+        return v[0] * v[0] + v[1] * v[1] + v[2] * v[2] < 1e-10f;
+    };
+
+    // Controller path: only the zero check applies
+    bool ctrlOk = controllerMotion != nullptr && !isZeroVec(controllerMotion->pose.position);
+
+    // Hand skeleton path: the client keeps re-sending the last pose when the hand is lost,
+    // so detect "frozen" (wrist pos + rot bit-identical for FROZEN_TIMEOUT_NS)
+    bool skelOk = false;
+    if (handSkeleton != nullptr && !isZeroVec(handSkeleton->jointPositions[0])) {
+        const float* p = handSkeleton->jointPositions[0];
+        auto r = handSkeleton->jointRotations[0];
+
+        bool changed = m_lastSkelChangeNs == 0 || p[0] != m_lastSkelPos[0]
+            || p[1] != m_lastSkelPos[1] || p[2] != m_lastSkelPos[2] || r.x != m_lastSkelRot[0]
+            || r.y != m_lastSkelRot[1] || r.z != m_lastSkelRot[2] || r.w != m_lastSkelRot[3];
+
+        if (changed) {
+            m_lastSkelPos[0] = p[0];
+            m_lastSkelPos[1] = p[1];
+            m_lastSkelPos[2] = p[2];
+            m_lastSkelRot[0] = r.x;
+            m_lastSkelRot[1] = r.y;
+            m_lastSkelRot[2] = r.z;
+            m_lastSkelRot[3] = r.w;
+            m_lastSkelChangeNs = targetTimestampNs;
+        }
+
+        skelOk = targetTimestampNs < m_lastSkelChangeNs
+            || (targetTimestampNs - m_lastSkelChangeNs) < FROZEN_TIMEOUT_NS;
+    } else {
+        m_lastSkelChangeNs = 0; // reset so the next valid frame counts as changed
+    }
+
+    if (!ctrlOk) {
+        controllerMotion = nullptr;
+    }
+    if (!skelOk) {
+        handSkeleton = nullptr;
+    }
+
+    bool enabled = (controllerMotion != nullptr || handSkeleton != nullptr) && roleMatches;
 
     Debug(
         "%s %s: enabled: %d, ctrl: %d, hand: %d",
@@ -426,7 +469,6 @@ bool Controller::OnPoseUpdate(uint64_t targetTimestampNs, float predictionS, Ffi
 
     return false;
 }
-
 void GetThumbBoneTransform(
     bool withController, bool isLeftHand, bool touch, vr::VRBoneTransform_t outBoneTransform[]
 ) {
